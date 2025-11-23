@@ -42,21 +42,13 @@ The latent output automatically matches the dimensions of your input images (div
 
 ## Installation
 
-### Method 1: Simple Installation
-1. Place the `ComfyUI-K3NKImageGrab.py` file directly in your ComfyUI `custom_nodes/` directory
-2. Restart ComfyUI completely
-3. The node will appear under `K3NK/loaders`
-
-### Method 2: Folder Structure (Advanced)
-If you prefer to keep it in a folder, use this structure:
-
-## ComfyUI-Manager Support
-
-This node is compatible with ComfyUI-Manager. You can install it directly by:
-
+### Method 1: ComfyUI Manager (Recommended)
 1. Open ComfyUI
 2. Go to **Manager** → **Install Custom Node**
 3. Search for **"K3NK Image Grab"**
-4. Click Install
+4. Click Install and restart ComfyUI
 
-Or use the URL: `https://github.com/K3NK3/ComfyUI-K3NKImageGrab`
+### Method 2: Git Installation
+```bash
+cd ComfyUI/custom_nodes
+git clone https://github.com/K3NK3/ComfyUI-K3NKImageGrab
