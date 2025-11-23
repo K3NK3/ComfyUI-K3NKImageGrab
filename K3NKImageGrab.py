@@ -71,7 +71,8 @@ class K3NKImageGrab:
             if img.mode != "RGB":
                 img = img.convert("RGB")
             arr = np.array(img).astype(np.float32) / 255.0
-            tensors.append(torch.from_numpy(arr)[None,])
+            tensor = torch.from_numpy(arr)[None,]
+            tensors.append(tensor)
             filenames.append(os.path.basename(f))
             full_paths.append(f)
             timestamps.append(os.path.getmtime(f))
@@ -89,7 +90,9 @@ class K3NKImageGrab:
             latent_width = 64
             latent_height = 64
             
-        latent = torch.zeros([batch_size, 4, latent_height, latent_width])
+        # Create latent on the same device as the image batch
+        device = batch.device
+        latent = torch.zeros([batch_size, 4, latent_height, latent_width], device=device)
         latent_output = {"samples": latent}
         
         return batch, latent_output, "\n".join(filenames), "\n".join(full_paths), float(max(timestamps))
