@@ -49,3 +49,14 @@ The latent output automatically matches the dimensions of your input images (div
 
 ### Method 2: Folder Structure (Advanced)
 If you prefer to keep it in a folder, use this structure:
+
+## ComfyUI-Manager Support
+
+This node is compatible with ComfyUI-Manager. You can install it directly by:
+
+1. Open ComfyUI
+2. Go to **Manager** → **Install Custom Node**
+3. Search for **"K3NK Image Grab"**
+4. Click Install
+
+Or use the URL: `https://github.com/K3NK3/ComfyUI-K3NKImageGrab`
