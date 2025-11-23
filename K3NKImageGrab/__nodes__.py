@@ -6,11 +6,6 @@ import numpy as np
 import time
 import sys
 
-# Add current directory to path for reliable imports
-current_dir = os.path.dirname(os.path.realpath(__file__))
-if current_dir not in sys.path:
-    sys.path.insert(0, current_dir)
-
 class K3NKImageGrab:
     """
     Standalone ComfyUI node.
@@ -39,7 +34,6 @@ class K3NKImageGrab:
 
     @classmethod
     def IS_CHANGED(cls, directory_path, num_images=2, frame_stride=5, file_extensions="jpg,jpeg,png,bmp,tiff,webp"):
-        # Triggers refresh if directory exists
         if not os.path.exists(directory_path):
             return time.time()
         return time.time()
@@ -77,35 +71,32 @@ class K3NKImageGrab:
             if img.mode != "RGB":
                 img = img.convert("RGB")
             arr = np.array(img).astype(np.float32) / 255.0
-            tensors.append(torch.from_numpy(arr)[None,])
+            tensor = torch.from_numpy(arr)[None,]
+            tensors.append(tensor)
             filenames.append(os.path.basename(f))
             full_paths.append(f)
             timestamps.append(os.path.getmtime(f))
-            image_sizes.append(img.size)  # (width, height)
+            image_sizes.append(img.size)
 
         batch = torch.cat(tensors, dim=0)
         
         # Create latent output matching image dimensions
         batch_size = batch.shape[0]
-        # Use dimensions from first image, or default to 512x512
         if image_sizes:
             width, height = image_sizes[0]
             latent_width = width // 8
             latent_height = height // 8
         else:
-            latent_width = 64  # 512 // 8
-            latent_height = 64  # 512 // 8
+            latent_width = 64
+            latent_height = 64
             
-        # Create empty latents
-        latent = torch.zeros([batch_size, 4, latent_height, latent_width])
-        
-        latent_output = {
-            "samples": latent
-        }
+        # Create latent on the same device as the image batch
+        device = batch.device
+        latent = torch.zeros([batch_size, 4, latent_height, latent_width], device=device)
+        latent_output = {"samples": latent}
         
         return batch, latent_output, "\n".join(filenames), "\n".join(full_paths), float(max(timestamps))
 
-# Node mappings - ComfyUI looks for these specifically
 NODE_CLASS_MAPPINGS = {
     "K3NKImageGrab": K3NKImageGrab
 }
@@ -114,5 +105,4 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "K3NKImageGrab": "K3NK Image Grab"
 }
 
-# Debug output to verify loading
-print(f"\033[92mK3NK Image Grab Node: Loaded successfully from {os.path.basename(current_dir)}\033[0m")
+print("### K3NK Image Grab: Loaded ###")
