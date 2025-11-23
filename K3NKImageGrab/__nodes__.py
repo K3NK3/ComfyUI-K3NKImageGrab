@@ -6,13 +6,11 @@ import numpy as np
 import time
 import sys
 
-class K3NKImageGrab:
-    """
-    Standalone ComfyUI node.
-    Grabs the last N frames from a directory as a single batch,
-    with optional frame stride between selected frames.
-    """
+current_dir = os.path.dirname(os.path.realpath(__file__))
+if current_dir not in sys.path:
+    sys.path.insert(0, current_dir)
 
+class K3NKImageGrab:
     @classmethod
     def INPUT_TYPES(cls):
         return {
@@ -23,22 +21,21 @@ class K3NKImageGrab:
                                          "tooltip": "Number of frames to skip between selected frames"})
             },
             "optional": {
-                "file_extensions": ("STRING", {"default": "jpg,jpeg,png,bmp,tiff,webp"})
+                "file_extensions": ("STRING", {"default": "jpg,jpeg,png,bmp,tiff,webp"}),
+                "vae": ("VAE",)  # Add VAE input for proper latent encoding
             }
         }
 
     RETURN_TYPES = ("IMAGE", "LATENT", "STRING", "STRING", "FLOAT")
-    RETURN_NAMES = ("image", "latent", "filenames", "full_paths", "timestamp")
+    RETURN_NAMES = ("image", "extra_latents", "filenames", "full_paths", "timestamp")
     FUNCTION = "grab_latest_images"
     CATEGORY = "K3NK/loaders"
 
     @classmethod
-    def IS_CHANGED(cls, directory_path, num_images=2, frame_stride=5, file_extensions="jpg,jpeg,png,bmp,tiff,webp"):
-        if not os.path.exists(directory_path):
-            return time.time()
+    def IS_CHANGED(cls, **kwargs):
         return time.time()
 
-    def grab_latest_images(self, directory_path, num_images=2, frame_stride=5, file_extensions="jpg,jpeg,png,bmp,tiff,webp"):
+    def grab_latest_images(self, directory_path, num_images=2, frame_stride=5, file_extensions="jpg,jpeg,png,bmp,tiff,webp", vae=None):
         extensions = [e.strip().lower() for e in file_extensions.split(",")]
         all_files = []
         for ext in extensions:
@@ -50,11 +47,9 @@ class K3NKImageGrab:
         if len(all_files) == 0:
             raise ValueError(f"No frames found in '{directory_path}'")
 
-        # Sort files by modification time descending
         all_files = list({f: os.path.getmtime(f) for f in all_files}.items())
         all_files.sort(key=lambda x: x[1], reverse=True)
 
-        # Safe selection with stride
         selected_files = []
         index = 0
         while index < len(all_files) and len(selected_files) < num_images:
@@ -63,7 +58,6 @@ class K3NKImageGrab:
 
         tensors = []
         filenames, full_paths, timestamps = [], [], []
-        image_sizes = []
 
         for f in selected_files:
             img = Image.open(f)
@@ -76,33 +70,23 @@ class K3NKImageGrab:
             filenames.append(os.path.basename(f))
             full_paths.append(f)
             timestamps.append(os.path.getmtime(f))
-            image_sizes.append(img.size)
 
         batch = torch.cat(tensors, dim=0)
         
-        # Create latent output matching image dimensions
-        batch_size = batch.shape[0]
-        if image_sizes:
-            width, height = image_sizes[0]
-            latent_width = width // 8
-            latent_height = height // 8
+        # Create proper latents for WanVideo
+        if vae is not None:
+            # Use VAE to encode images to proper latents
+            latent = vae.encode(batch)
         else:
-            latent_width = 64
-            latent_height = 64
-            
-        # Create latent on the same device as the image batch
-        device = batch.device
-        latent = torch.zeros([batch_size, 4, latent_height, latent_width], device=device)
-        latent_output = {"samples": latent}
+            # Fallback: create empty latents with correct dimensions
+            batch_size = batch.shape[0]
+            height = batch.shape[1] // 8
+            width = batch.shape[2] // 8
+            latent = torch.zeros([batch_size, 4, height, width])
+            latent = {"samples": latent}
         
-        return batch, latent_output, "\n".join(filenames), "\n".join(full_paths), float(max(timestamps))
+        return (batch, latent, "\n".join(filenames), "\n".join(full_paths), float(max(timestamps)))
 
-NODE_CLASS_MAPPINGS = {
-    "K3NKImageGrab": K3NKImageGrab
-}
-
-NODE_DISPLAY_NAME_MAPPINGS = {
-    "K3NKImageGrab": "K3NK Image Grab"
-}
-
-print("### K3NK Image Grab: Loaded ###")
+NODE_CLASS_MAPPINGS = {"K3NKImageGrab": K3NKImageGrab}
+NODE_DISPLAY_NAME_MAPPINGS = {"K3NKImageGrab": "K3NK Image Grab"}
+print("✅ K3NK Image Grab: Loaded")
