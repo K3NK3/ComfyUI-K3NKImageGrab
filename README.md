@@ -11,8 +11,6 @@ This node is designed to feed video continuation workflows, improving temporal c
 - Grab the last N frames from a folder
 - Optional frame stride: skip frames between selected frames
 - Returns a single batch tensor for ComfyUI nodes
-- **Latent output** for direct integration with diffusion pipelines
-- **Automatic size matching** - latent dimensions match input image sizes
 - Standalone: no dependencies on other custom nodes
 
 ## Inputs
@@ -29,7 +27,6 @@ This node is designed to feed video continuation workflows, improving temporal c
 | Name | Type | Description |
 |------|------|-------------|
 | image | IMAGE | Batch tensor containing selected frames |
-| latent | LATENT | Empty latents matching image dimensions for diffusion pipelines |
 | filenames | STRING | Names of the selected files |
 | full_paths | STRING | Full paths of the selected files |
 | timestamp | FLOAT | Latest modification timestamp among selected files |
@@ -38,7 +35,6 @@ This node is designed to feed video continuation workflows, improving temporal c
 
 Grab 4 frames with a stride of 5 frames between them: `num_images = 4, frame_stride = 5`. This will select the last frame, skip 5 frames backward, grab another, and repeat until 4 frames are collected.
 
-The latent output automatically matches the dimensions of your input images (divided by 8 for VAE compatibility), making it ready for direct use in diffusion workflows.
 
 ## Installation
 
