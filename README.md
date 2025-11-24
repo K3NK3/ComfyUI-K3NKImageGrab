@@ -100,5 +100,5 @@ MIT License.
 
 ## Credits
 
-This node is adapted and enhanced from the original BoyoNodes version:  
+This node is adapted and "standaloned" from the original BoyoNodes version:  
 https://github.com/dragon9918/BoyoNodes
