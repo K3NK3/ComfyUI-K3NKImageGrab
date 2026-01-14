@@ -21,8 +21,8 @@ class K3NKImageGrab:
         return {
             "required": {
                 "directory_path": ("STRING", {"default": "", "placeholder": "Directory path"}),
-                "num_images": ("INT", {"default": 2, "min": 1, "max": 100}),
-                "frame_stride": ("INT", {"default": 5, "min": 0, "max": 100,
+                "num_images": ("INT", {"default": 2, "min": 1, "max": 100000}),
+                "frame_stride": ("INT", {"default": 5, "min": 0, "max": 100000,
                                          "tooltip": "Number of frames to skip between selected frames"}),
                 "reverse_order": ("BOOLEAN", {"default": False, 
                                               "tooltip": "Reverse the order of selected images in output"}),
@@ -394,3 +394,4 @@ print("✅ K3NK Image Grab (Fixed concatenation order): Loaded")
 print("   - latent_batch ahora empieza desde los frames del .latent más nuevo")
 print("   - Concatenación corregida para poner frames nuevos al FINAL")
 print("   - batch_start_frame=0 + max_batch_frames=N → últimos N frames")
+
