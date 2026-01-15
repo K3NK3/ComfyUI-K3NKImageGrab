@@ -31,9 +31,13 @@ class K3NKImageGrab:
                 "max_batch_frames": ("INT", {"default": 0, "min": 0, "max": 1000,
                                             "tooltip": "Max frames to output in latent_batch (0 = all frames)"}),
                 "batch_start_frame": ("INT", {"default": 0, "min": 0, "max": 1000,
-                                             "tooltip": "Starting frame index from END (0=keep all frames, 1=remove last frame, 2=remove last 2 frames, etc.)"}),
+                                             "tooltip": "Starting frame index (0=first frame, 1=second frame, etc.)"}),
+                "batch_end_frame": ("INT", {"default": 0, "min": 0, "max": 1000,
+                                           "tooltip": "Frames to remove from END (0=keep all, 1=remove last frame, 2=remove last 2 frames, etc.)"}),
                 "anchor_from_start": ("BOOLEAN", {"default": False,
                                                  "tooltip": "True: first frame of lowest-number file\nFalse: last frame of highest-number file"}),
+                "anchor_frame_index": ("INT", {"default": 0, "min": 0, "max": 10000,
+                                              "tooltip": "Frame index to use as anchor (0=first/last depending on anchor_from_start, 1=second/second-to-last, etc.)"}),
                 "latent_frame_stride": ("BOOLEAN", {"default": True,
                                                    "tooltip": "Apply frame_stride to latent files (skip frames inside .latent files)"})
             },
@@ -156,8 +160,9 @@ class K3NKImageGrab:
     
     def grab_latest_images(self, directory_path, num_images=2, frame_stride=5, 
                           reverse_order=False, reverse_logic=False, 
-                          max_batch_frames=0, batch_start_frame=0,
-                          anchor_from_start=False, latent_frame_stride=True,
+                          max_batch_frames=0, batch_start_frame=0, batch_end_frame=0,
+                          anchor_from_start=False, anchor_frame_index=0,
+                          latent_frame_stride=True,
                           file_extensions="jpg,jpeg,png,bmp,tiff,webp,latent", 
                           vae=None):
         extensions = [e.strip().lower() for e in file_extensions.split(",")]
@@ -174,15 +179,15 @@ class K3NKImageGrab:
         
         print(f"📁 Found {len(all_files)} files in directory")
         
-        # Extraer información de TODOS los archivos
+        # Extract info from ALL files
         all_files_info = []
         for f in all_files:
             filename = os.path.basename(f)
             number = self.extract_number_from_filename(filename)
             all_files_info.append((f, filename, number, os.path.getmtime(f)))
         
-        # Ordenar por número para identificar lowest/highest
-        all_files_info.sort(key=lambda x: x[2])  # Sort by number ascending
+        # Sort by number to identify lowest/highest
+        all_files_info.sort(key=lambda x: x[2])
         
         lowest_file = all_files_info[0] if all_files_info else None
         highest_file = all_files_info[-1] if all_files_info else None
@@ -192,49 +197,51 @@ class K3NKImageGrab:
         # ===== ANCHOR FRAME =====
         print(f"\n🎯 ANCHOR FRAME:")
         
-        if anchor_from_start and lowest_file:
-            # Primer frame del archivo más viejo (número más bajo)
-            anchor_file = lowest_file
-            print(f"  anchor_from_start=True → First frame of LOWEST number: {anchor_file[1]}")
-            
-            if anchor_file[0].lower().endswith('.latent'):
-                anchor_latent = self.load_latent_file(anchor_file[0])
-                anchor_tensor = self.prepare_for_wanvideo(anchor_latent)
-                anchor_frame_output = {"samples": anchor_tensor[:, :, 0:1, :, :]}
-            else:
-                anchor_frame_output = {"samples": torch.zeros([1, 16, 1, 64, 112])}
-            
-        elif not anchor_from_start and highest_file:
-            # Último frame del archivo más nuevo (número más alto)
-            anchor_file = highest_file
-            print(f"  anchor_from_start=False → Last frame of HIGHEST number: {anchor_file[1]}")
-            
-            if anchor_file[0].lower().endswith('.latent'):
-                anchor_latent = self.load_latent_file(anchor_file[0])
-                anchor_tensor = self.prepare_for_wanvideo(anchor_latent)
-                last_frame_idx = anchor_tensor.shape[2] - 1
-                anchor_frame_output = {"samples": anchor_tensor[:, :, last_frame_idx:last_frame_idx+1, :, :]}
-            else:
-                anchor_frame_output = {"samples": torch.zeros([1, 16, 1, 64, 112])}
+        # Filter only .latent files for anchor
+        latent_files = [f for f in all_files_info if f[0].lower().endswith('.latent')]
         
-        else:
+        if not latent_files:
+            print(f"  ⚠️ No .latent files found, using fallback")
             anchor_frame_output = {"samples": torch.zeros([1, 16, 1, 64, 112])}
+        else:
+            latent_files.sort(key=lambda x: x[2])
+            
+            if anchor_from_start:
+                anchor_file = latent_files[0]
+                print(f"  anchor_from_start=True → LOWEST .latent number: {anchor_file[1]} (number: {anchor_file[2]})")
+                
+                anchor_latent = self.load_latent_file(anchor_file[0])
+                anchor_tensor = self.prepare_for_wanvideo(anchor_latent)
+                total_frames = anchor_tensor.shape[2]
+                
+                frame_idx = min(anchor_frame_index, total_frames - 1)
+                print(f"  Using frame {frame_idx} of {total_frames} (anchor_frame_index={anchor_frame_index})")
+                anchor_frame_output = {"samples": anchor_tensor[:, :, frame_idx:frame_idx+1, :, :]}
+            else:
+                anchor_file = latent_files[-1]
+                print(f"  anchor_from_start=False → HIGHEST .latent number: {anchor_file[1]} (number: {anchor_file[2]})")
+                
+                anchor_latent = self.load_latent_file(anchor_file[0])
+                anchor_tensor = self.prepare_for_wanvideo(anchor_latent)
+                total_frames = anchor_tensor.shape[2]
+                
+                frame_idx = max(0, total_frames - 1 - anchor_frame_index)
+                print(f"  Using frame {frame_idx} of {total_frames} (anchor_frame_index={anchor_frame_index} from end)")
+                anchor_frame_output = {"samples": anchor_tensor[:, :, frame_idx:frame_idx+1, :, :]}
         
         print(f"  Anchor shape: {anchor_frame_output['samples'].shape}")
         
-        # ===== LATENT BATCH (selección normal) =====
+        # ===== LATENT BATCH (normal selection) =====
         print(f"\n📦 LATENT BATCH (normal selection):")
         print(f"  frame_stride: {frame_stride} (applies to {'images AND latents' if latent_frame_stride else 'images only'})")
         
-        # Ordenar para selección basado en reverse_logic
         if reverse_logic:
-            files_for_selection = sorted(all_files_info, key=lambda x: x[2])  # Números ascendentes
+            files_for_selection = sorted(all_files_info, key=lambda x: x[2])
             print(f"  reverse_logic=True → Select from OLDEST files first")
         else:
-            files_for_selection = sorted(all_files_info, key=lambda x: x[2], reverse=True)  # Números descendentes
+            files_for_selection = sorted(all_files_info, key=lambda x: x[2], reverse=True)
             print(f"  reverse_logic=False → Select from NEWEST files first")
         
-        # Seleccionar archivos
         selected_files_info = []
         index = 0
         
@@ -250,7 +257,6 @@ class K3NKImageGrab:
             selected_files_info.reverse()
             print(f"  reverse_order=True → Reversed selection order")
         
-        # Procesar archivos para latent_batch
         wanvideo_tensors = []
         image_tensors = []
         filenames, full_paths, timestamps = [], [], []
@@ -263,7 +269,6 @@ class K3NKImageGrab:
                 latent_tensor = self.load_latent_file(f)
                 wanvideo_tensor = self.prepare_for_wanvideo(latent_tensor)
                 
-                # Aplicar frame_stride a los frames internos del .latent
                 if latent_frame_stride and frame_stride > 0 and wanvideo_tensor.shape[2] > 1:
                     total_frames = wanvideo_tensor.shape[2]
                     selected_frames_indices = list(range(0, total_frames, frame_stride + 1))
@@ -272,7 +277,6 @@ class K3NKImageGrab:
                         print(f"    Applying frame_stride={frame_stride} inside .latent file")
                         print(f"    Original frames: {total_frames}, Selected frames: {len(selected_frames_indices)}")
                         
-                        # Crear nuevo tensor con solo los frames seleccionados
                         selected_frames = []
                         for idx in selected_frames_indices:
                             selected_frames.append(wanvideo_tensor[:, :, idx:idx+1, :, :])
@@ -283,7 +287,6 @@ class K3NKImageGrab:
                 
                 wanvideo_tensors.append(wanvideo_tensor)
                 
-                # Placeholder para imagen
                 if len(wanvideo_tensor.shape) == 5:
                     _, _, _, h_latent, w_latent = wanvideo_tensor.shape
                 else:
@@ -322,15 +325,13 @@ class K3NKImageGrab:
         if not wanvideo_tensors:
             raise ValueError("No valid frames loaded for batch")
         
-        # Asegurar batch size = 1
         for i, tensor in enumerate(wanvideo_tensors):
             if tensor.shape[0] != 1:
                 wanvideo_tensors[i] = tensor[0:1]
         
-        # ===== CONCATENACIÓN CORREGIDA =====
+        # ===== FIXED CONCATENATION =====
         print(f"\n🔧 CONCATENATING FRAMES (FIXED for newest-first):")
         
-        # Invertir el orden de los tensores si reverse_logic=False (selección desde los más nuevos)
         if not reverse_logic and not reverse_order:
             print(f"  reverse_logic=False → Reversing tensor order for concatenation")
             wanvideo_tensors.reverse()
@@ -347,7 +348,6 @@ class K3NKImageGrab:
                 temporal_slice = tensor[:, :, t:t+1, :, :]
                 temporal_slices.append(temporal_slice)
         
-        # Concatenar todos los frames
         if temporal_slices:
             wanvideo_batch = torch.cat(temporal_slices, dim=2)
         else:
@@ -357,36 +357,26 @@ class K3NKImageGrab:
         print(f"  Total frames concatenated: {total_frames}")
         print(f"  Batch shape before selection: {wanvideo_batch.shape}")
         
-        # ===== APLICAR SELECCIÓN DE FRAMES (INVERTIDA - desde el FINAL) =====
-        print(f"\n✂️ APPLYING FRAME SELECTION (INVERTED - from END):")
-        print(f"  batch_start_frame: {batch_start_frame} (frames to remove from END)")
-        print(f"  max_batch_frames: {max_batch_frames} (0 = all frames)")
+        # ===== APPLY FRAME SELECTION =====
+        print(f"\n✂️ APPLYING FRAME SELECTION:")
+        print(f"  batch_start_frame: {batch_start_frame} (starting frame index)")
+        print(f"  batch_end_frame: {batch_end_frame} (frames to remove from END)")
+        print(f"  max_batch_frames: {max_batch_frames} (0 = ignored)")
         
-        # Calcular el frame de inicio desde el FINAL
-        if batch_start_frame > 0:
-            # batch_start_frame indica cuántos frames eliminar desde el final
-            frames_to_remove = min(batch_start_frame, total_frames)
+        start_frame = min(batch_start_frame, total_frames - 1) if total_frames > 0 else 0
+        
+        if batch_end_frame > 0:
+            frames_to_remove = min(batch_end_frame, total_frames)
             end_frame = total_frames - frames_to_remove
-            start_frame = 0  # Siempre empezamos desde el principio
-            
-            print(f"  Removing {frames_to_remove} frames from the END")
-            print(f"  Keeping frames 0 to {end_frame} (total {end_frame} frames)")
+            print(f"  Removing {frames_to_remove} frames from END")
         else:
-            # Si es 0, mantener todos los frames
-            start_frame = 0
             end_frame = total_frames
-            print(f"  batch_start_frame=0 → Keeping ALL frames")
+            print(f"  Keeping all frames until the end")
         
-        # Ahora aplicar max_batch_frames (si está configurado)
         if max_batch_frames > 0:
-            # Ajustar para NO exceder max_batch_frames
-            available_frames = end_frame - start_frame
-            if available_frames > max_batch_frames:
-                # Para mantener el comportamiento de tomar los últimos N frames
-                start_frame = max(0, end_frame - max_batch_frames)
-                print(f"  max_batch_frames={max_batch_frames} → Adjusting to frames {start_frame}:{end_frame}")
+            end_frame = min(start_frame + max_batch_frames, end_frame)
+            print(f"  max_batch_frames={max_batch_frames} limits to {end_frame}")
         
-        # Finalmente, calcular cuántos frames tomar
         frames_to_take = end_frame - start_frame
         
         print(f"  Final selection: frames {start_frame}:{end_frame} ({frames_to_take} frames)")
@@ -394,19 +384,16 @@ class K3NKImageGrab:
         if frames_to_take > 0:
             selected_batch = wanvideo_batch[:, :, start_frame:end_frame, :, :]
         else:
-            # Si no quedan frames, tomar al menos 1 frame
             if total_frames > 0:
                 selected_batch = wanvideo_batch[:, :, 0:1, :, :]
-                print(f"  Warning: No frames left after removal, keeping first frame")
+                print(f"  Warning: Invalid range, keeping first frame")
             else:
                 selected_batch = wanvideo_batch[:, :, -1:, :, :]
         
         print(f"  Selected batch shape: {selected_batch.shape}")
         
-        # Crear output
         latent_batch_output = {"samples": selected_batch}
         
-        # Concatenar imágenes para preview
         if image_tensors:
             image_batch = torch.cat(image_tensors, dim=0)
         else:
@@ -423,12 +410,11 @@ class K3NKImageGrab:
 
 NODE_CLASS_MAPPINGS = {"K3NKImageGrab": K3NKImageGrab}
 NODE_DISPLAY_NAME_MAPPINGS = {"K3NKImageGrab": "K3NK Image Grab"}
-print("✅ K3NK Image Grab (Inverted batch_start_frame): Loaded")
-print("   - latent_batch ahora empieza desde los frames del .latent más nuevo")
-print("   - Concatenación corregida para poner frames nuevos al FINAL")
-print("   - batch_start_frame ahora funciona desde el FINAL:")
-print("     0 = mantener todos los frames")
-print("     1 = eliminar el último frame")
-print("     2 = eliminar los últimos 2 frames")
-print("     ... etc.")
-print("   - frame_stride ahora aplica también a frames dentro de archivos .latent")
+print("✅ K3NK Image Grab (with anchor_frame_index): Loaded")
+print("   - anchor_frame_index: selects a specific frame from the anchor file")
+print("     If anchor_from_start=True: 0=first frame, 1=second frame, etc.")
+print("     If anchor_from_start=False: 0=last frame, 1=second-to-last frame, etc.")
+print("   - batch_start_frame: index of the first frame to take (0=first frame, 1=second, etc.)")
+print("   - batch_end_frame: frames to remove from the END (0=none, 1=remove last, 2=remove last 2, etc.)")
+print("   - max_batch_frames: maximum number of frames (0=ignored, has priority over batch_end_frame)")
+print("   - frame_stride: also applies to frames inside .latent files")
