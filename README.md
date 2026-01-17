@@ -1,12 +1,12 @@
 # K3NK Image Grab
-Advanced ComfyUI node for loading and processing images/latent files with full WanVideo SVI compatibility.
+Advanced ComfyUI node for loading and processing images/latent files with full WanVideoWrapper SVI compatibility.
 This node is specifically designed for video continuation workflows with **WanVideoWrapper SVI nodes**, allowing seamless loading of saved `.latent` files and proper formatting for temporal consistency.
 
 **Credit:** This node is a modified version of the original BoyoNodes by DragonDiffusion (https://github.com/DragonDiffusionbyBoyo/Boyonodes). Thanks to the author for the original implementation.
 
 ## Features
 - **Multi-format support**: Loads `.latent` files (safetensors, pickle, ComfyUI SaveLatent format), plus standard images
-- **WanVideo 5D format**: Outputs tensors in `[1, 16, T, H, W]` format compatible with WanVideo SVI nodes
+- **WanVideoWrapper 5D format**: Outputs tensors in `[1, 16, T, H, W]` format compatible with WanVideoWrapper SVI nodes
 - **Dual output system**: Separate `anchor_frame` and `latent_batch` outputs for SVI workflows
 - **Flexible file selection**: Grab N frames with configurable stride and ordering
 - **Independent anchor control**: Anchor frame selection independent of batch processing
@@ -16,8 +16,8 @@ This node is specifically designed for video continuation workflows with **WanVi
 - **Enhanced frame trimming**: Added `batch_end_frame` parameter to remove frame groups from the end of the batch
 - **Latent stride control**: `latent_frame_stride` toggles whether `frame_stride` applies to frames inside `.latent` files
 
-## Important: WanVideo Frame Groups
-WanVideo processes frames in groups of 4 (frame groups). This affects how parameters work:
+## Important: WanVideoWrapper Frame Groups
+WanVideoWrapper processes frames in groups of 4 (frame groups). This affects how parameters work:
 - `batch_start_frame`: Starting **frame group** index (not individual frame)
 - `batch_end_frame`: **Frame groups** to remove from END (not individual frames)
 - Each frame group contains 4 frames
@@ -45,8 +45,8 @@ WanVideo processes frames in groups of 4 (frame groups). This affects how parame
 | Name | Type | Description |
 |------|------|-------------|
 | `image` | IMAGE | Image batch for preview (black placeholders for .latent files) |
-| `latent_batch` | LATENT | All frames in WanVideo format `[1, 16, T, H, W]` for `prev_samples` |
-| `anchor_frame` | LATENT | Single frame in WanVideo format `[1, 16, 1, H, W]` for `anchor_frame` |
+| `latent_batch` | LATENT | All frames in WanVideoWrapper format `[1, 16, T, H, W]` for `prev_samples` |
+| `anchor_frame` | LATENT | Single frame in WanVideoWrapper format `[1, 16, 1, H, W]` for `anchor_frame` |
 | `filenames` | STRING | Names of processed files |
 | `full_paths` | STRING | Full paths of processed files |
 | `timestamp` | FLOAT | Latest modification timestamp |
@@ -54,9 +54,9 @@ WanVideo processes frames in groups of 4 (frame groups). This affects how parame
 ## Key Workflows
 
 ### Video Continuation with SVI
-Saved .latent files → K3NK Image Grab → WanVideo SVI nodes → Continue generation
+Saved .latent files → K3NK Image Grab → WanVideoWrapper SVI nodes → Continue generation
 - Load previously saved `.latent` files from SaveLatent node
-- Automatically converts to WanVideo 5D format
+- Automatically converts to WanVideoWrapper 5D format
 - Provides proper `anchor_frame` and `prev_samples` for SVI
 
 ### Anchor Frame Strategies
@@ -69,7 +69,7 @@ Saved .latent files → K3NK Image Grab → WanVideo SVI nodes → Continue gene
   - `anchor_frame_index=1`: Second-to-last frame of file
   - `anchor_frame_index=N`: (N+1)th frame from the end
 
-### Frame Group Selection Examples (WanVideo 4-frame groups)
+### Frame Group Selection Examples (WanVideoWrapper 4-frame groups)
 | Goal | Settings | Explanation |
 |------|----------|-------------|
 | Last 4 frames (1 group) | `max_batch_frames=4`, `batch_start_frame=0` | Takes last 4 frames as one group |
@@ -94,7 +94,7 @@ Settings:
 - anchor_frame_index: 2 (third-to-last frame)
 - reverse_logic: False (start from newest)
 - num_images: 2
-- max_batch_frames: 4 (one WanVideo group)
+- max_batch_frames: 4 (one WanVideoWrapper group)
 Result:
 - anchor_frame: Third-to-last frame of newest .latent file
 - latent_batch: Last 4 frames from 2 newest files (1 frame group)
@@ -139,7 +139,7 @@ Result:
 - **Safetensors format**: Looks for `latent_tensor` or `samples` keys
 - **ComfyUI SaveLatent**: Supports JSON format with metadata
 - **PyTorch pickle**: Direct tensor or dictionary loading
-- **WanVideo format**: Auto-converts to `[1, 16, T, H, W]`
+- **WanVideoWrapper format**: Auto-converts to `[1, 16, T, H, W]`
 
 ### Output Format
 - `latent_batch`: `[1, 16, total_frames, height//8, width//8]`
@@ -177,7 +177,7 @@ Restart ComfyUI after installation.
 ## Tips & Best Practices
 
 ### For SVI Workflows
-- Use `.latent` files saved from WanVideoEncode for best compatibility
+- Use `.latent` files saved from WanVideoWrapper Encode for best compatibility
 - Set `anchor_from_start=False` and `anchor_frame_index=0` to continue from where you left off
 - Use `max_batch_frames=4-8` for optimal SVI performance (1-2 frame groups)
 - Ensure consistent dimensions across all loaded files
@@ -188,7 +188,7 @@ Restart ComfyUI after installation.
 - When starting a new shot, choose a frame from the middle for better temporal coherence
 
 ### Frame Group Management
-- WanVideo processes frames in groups of 4
+- WanVideoWrapper processes frames in groups of 4
 - `batch_start_frame=1` skips the first 4 frames (entire first group)
 - `batch_end_frame=2` removes the last 8 frames (2 groups)
 - Always work with multiples of 4 for clean SVI integration
@@ -209,7 +209,7 @@ Restart ComfyUI after installation.
 
 ### "not enough values to unpack" error
 - Ensure you're using the latest version
-- Check that `.latent` files are in correct WanVideo format
+- Check that `.latent` files are in correct WanVideoWrapper format
 - Verify tensor shapes in console output
 
 ### Anchor frame not as expected
@@ -223,7 +223,7 @@ Restart ComfyUI after installation.
 - Ensure files have numeric sequences in names
 
 ### Frame selection issues
-- Remember WanVideo uses 4-frame groups
+- Remember WanVideoWrapper uses 4-frame groups
 - `batch_start_frame` and `batch_end_frame` work with groups, not individual frames
 - Set `max_batch_frames=0` to disable frame limit
 - Example: To skip first 8 frames, use `batch_start_frame=2`
@@ -234,9 +234,9 @@ Restart ComfyUI after installation.
 - Check image dimensions are compatible with VAE
 
 ## Version History
-- v2.2: Updated for WanVideo frame groups (4-frame blocks). Clarified `batch_start_frame` and `batch_end_frame` as frame group indices.
+- v2.2: Updated for WanVideoWrapper frame groups (4-frame blocks). Clarified `batch_start_frame` and `batch_end_frame` as frame group indices.
 - v2.1: Added `anchor_frame_index`, `batch_end_frame`, `latent_frame_stride` parameters
-- v2.0: WanVideo 5D format support, SVI compatibility, anchor/batch separation
+- v2.0: WanVideoWrapper 5D format support, SVI compatibility, anchor/batch separation
 - v1.5: `.latent` file support, sequential numbering detection
 - v1.0: Initial release with basic image loading
 
