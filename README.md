@@ -10,11 +10,19 @@ This node is specifically designed for video continuation workflows with **WanVi
 - **Dual output system**: Separate `anchor_frame` and `latent_batch` outputs for SVI workflows
 - **Flexible file selection**: Grab N frames with configurable stride and ordering
 - **Independent anchor control**: Anchor frame selection independent of batch processing
-- **Frame limiting**: Select specific frame ranges from loaded batches
+- **Frame group selection**: Select specific frame groups (4-frame blocks) from loaded batches
 - **Sequential numbering**: Detects file order by numeric sequence in filenames
 - **Improved anchor selection**: New `anchor_frame_index` parameter for precise frame choice within anchor file
-- **Enhanced frame trimming**: Added `batch_end_frame` parameter to remove frames from the end of the batch
+- **Enhanced frame trimming**: Added `batch_end_frame` parameter to remove frame groups from the end of the batch
 - **Latent stride control**: `latent_frame_stride` toggles whether `frame_stride` applies to frames inside `.latent` files
+
+## Important: WanVideo Frame Groups
+WanVideo processes frames in groups of 4 (frame groups). This affects how parameters work:
+- `batch_start_frame`: Starting **frame group** index (not individual frame)
+- `batch_end_frame`: **Frame groups** to remove from END (not individual frames)
+- Each frame group contains 4 frames
+- Example: `batch_start_frame=1` skips the first 4 frames
+- Example: `batch_end_frame=2` removes the last 8 frames (2 groups × 4 frames)
 
 ## Inputs
 | Name | Type | Description |
@@ -25,8 +33,8 @@ This node is specifically designed for video continuation workflows with **WanVi
 | `reverse_order` | BOOLEAN | Reverse the order of selected files in output |
 | `reverse_logic` | BOOLEAN | Start selection from oldest (lowest number) instead of newest |
 | `max_batch_frames` | INT | Maximum frames in latent_batch (0=all frames, has priority over `batch_end_frame`) |
-| `batch_start_frame` | INT | Starting frame index for latent_batch output (0=first frame, 1=second frame, etc.) |
-| `batch_end_frame` | INT | Frames to remove from END of batch (0=keep all, 1=remove last frame, 2=remove last 2 frames, etc.) |
+| `batch_start_frame` | INT | Starting **frame group** index for latent_batch output (0=first group, 1=second group, etc.) |
+| `batch_end_frame` | INT | **Frame groups** to remove from END of batch (0=keep all, 1=remove last group, 2=remove last 2 groups, etc.) |
 | `anchor_from_start` | BOOLEAN | True: first frame of lowest-number file, False: last frame of highest-number file |
 | `anchor_frame_index` | INT | Frame index to use as anchor (0=first/last depending on `anchor_from_start`, 1=second/second-to-last, etc.) |
 | `latent_frame_stride` | BOOLEAN | Apply `frame_stride` to latent files (skip frames inside `.latent` files) |
@@ -61,16 +69,15 @@ Saved .latent files → K3NK Image Grab → WanVideo SVI nodes → Continue gene
   - `anchor_frame_index=1`: Second-to-last frame of file
   - `anchor_frame_index=N`: (N+1)th frame from the end
 
-### Frame Selection Examples
-| Goal | Settings |
-|------|----------|
-| Last 4 frames | `max_batch_frames=4`, `batch_start_frame=0` |
-| Frames 10-15 | `batch_start_frame=10`, `max_batch_frames=5` |
-| All frames except last 2 | `batch_start_frame=0`, `batch_end_frame=2` |
-| Frames 5-20 (max 10) | `batch_start_frame=5`, `max_batch_frames=10` |
-| Skip every other file | `frame_stride=1` |
-| Start from oldest | `reverse_logic=True` |
-| Skip frames inside .latent files | `frame_stride=1`, `latent_frame_stride=True` |
+### Frame Group Selection Examples (WanVideo 4-frame groups)
+| Goal | Settings | Explanation |
+|------|----------|-------------|
+| Last 4 frames (1 group) | `max_batch_frames=4`, `batch_start_frame=0` | Takes last 4 frames as one group |
+| Groups 2-4 (12 frames) | `batch_start_frame=1`, `max_batch_frames=12` | Skips first group (4 frames), takes next 3 groups |
+| All except last group | `batch_start_frame=0`, `batch_end_frame=1` | Removes last 4 frames |
+| Groups 3-5 only | `batch_start_frame=2`, `batch_end_frame=2`, `max_batch_frames=12` | Takes groups 3,4,5 (12 frames) |
+| Skip every other file | `frame_stride=1` | Normal file skipping |
+| Start from oldest | `reverse_logic=True` | Selection logic reversed |
 
 ### File Naming Convention
 The node detects numeric sequences in filenames:
@@ -87,34 +94,35 @@ Settings:
 - anchor_frame_index: 2 (third-to-last frame)
 - reverse_logic: False (start from newest)
 - num_images: 2
-- max_batch_frames: 4
+- max_batch_frames: 4 (one WanVideo group)
 Result:
 - anchor_frame: Third-to-last frame of newest .latent file
-- latent_batch: Last 4 frames from 2 newest files
+- latent_batch: Last 4 frames from 2 newest files (1 frame group)
 
-### 2. Start New Sequence from Middle of First File
+### 2. Start from Middle Groups
 Settings:
 - anchor_from_start: True
 - anchor_frame_index: 10 (11th frame)
 - reverse_logic: True (start from oldest)
 - num_images: 1
-- max_batch_frames: 0 (all frames)
+- batch_start_frame: 2 (skip first 8 frames)
+- batch_end_frame: 1 (remove last 4 frames)
 Result:
 - anchor_frame: 11th frame of oldest .latent file
-- latent_batch: All frames from first file
+- latent_batch: Groups 3 onward, excluding last group
 
-### 3. Trimmed Middle Section with End Removal
+### 3. Trimmed Middle Section with Group Removal
 Settings:
 - anchor_from_start: False
 - anchor_frame_index: 0 (last frame)
 - reverse_logic: False
 - num_images: 3
-- batch_start_frame: 10
-- batch_end_frame: 5
-- max_batch_frames: 15
+- batch_start_frame: 2 (skip first 8 frames)
+- batch_end_frame: 2 (remove last 8 frames)
+- max_batch_frames: 16 (4 groups maximum)
 Result:
 - anchor_frame: Last frame of newest file
-- latent_batch: Frames 10-? from 3 newest files, removing last 5 frames, up to max 15 frames total
+- latent_batch: Groups 3 onward from 3 newest files, removing last 2 groups, up to max 4 groups
 
 ### 4. Stride Inside Latent Files
 Settings:
@@ -142,12 +150,12 @@ Result:
 1. Anchor frame: Selected independently based on `anchor_from_start` and `anchor_frame_index`
 2. File selection: Based on `num_images`, `frame_stride`, `reverse_logic`
 3. Frame concatenation: Temporal frames concatenated with newest files first
-4. Frame selection: Applied via `batch_start_frame`, `max_batch_frames`, and `batch_end_frame`
+4. Frame group selection: Applied via `batch_start_frame`, `max_batch_frames`, and `batch_end_frame`
 
 ### Priority Rules
 1. `max_batch_frames > 0`: Limits total frames (has highest priority)
-2. `batch_start_frame`: Sets starting point
-3. `batch_end_frame`: Removes frames from end (applied after `max_batch_frames` if both set)
+2. `batch_start_frame`: Sets starting frame group (multiplied by 4 for frames)
+3. `batch_end_frame`: Removes frame groups from end (multiplied by 4 for frames, applied after `max_batch_frames` if both set)
 
 ## Installation
 ### Method 1: ComfyUI Manager (Recommended)
@@ -171,13 +179,19 @@ Restart ComfyUI after installation.
 ### For SVI Workflows
 - Use `.latent` files saved from WanVideoEncode for best compatibility
 - Set `anchor_from_start=False` and `anchor_frame_index=0` to continue from where you left off
-- Use `max_batch_frames=4-8` for optimal SVI performance
+- Use `max_batch_frames=4-8` for optimal SVI performance (1-2 frame groups)
 - Ensure consistent dimensions across all loaded files
 
 ### Anchor Frame Selection
 - `anchor_frame_index` allows precise control over which frame to use as anchor
 - When continuing generation, use the last frame of the previous sequence
 - When starting a new shot, choose a frame from the middle for better temporal coherence
+
+### Frame Group Management
+- WanVideo processes frames in groups of 4
+- `batch_start_frame=1` skips the first 4 frames (entire first group)
+- `batch_end_frame=2` removes the last 8 frames (2 groups)
+- Always work with multiples of 4 for clean SVI integration
 
 ### File Management
 - Use sequential numbering in filenames for proper ordering
@@ -189,7 +203,7 @@ Restart ComfyUI after installation.
 - Loading `.latent` files is faster than encoding images
 - Use `frame_stride` to skip processing unnecessary files
 - `max_batch_frames` limits memory usage in downstream nodes
-- `batch_end_frame` helps remove unwanted frames without re-saving
+- `batch_end_frame` helps remove unwanted frame groups without re-saving
 
 ## Troubleshooting
 
@@ -209,9 +223,10 @@ Restart ComfyUI after installation.
 - Ensure files have numeric sequences in names
 
 ### Frame selection issues
-- Remember priority: `max_batch_frames` > `batch_start_frame` > `batch_end_frame`
-- `batch_end_frame` removes from END after other selections
+- Remember WanVideo uses 4-frame groups
+- `batch_start_frame` and `batch_end_frame` work with groups, not individual frames
 - Set `max_batch_frames=0` to disable frame limit
+- Example: To skip first 8 frames, use `batch_start_frame=2`
 
 ### VAE encoding issues
 - Connect a VAE node for image encoding
@@ -219,7 +234,8 @@ Restart ComfyUI after installation.
 - Check image dimensions are compatible with VAE
 
 ## Version History
-- v2.1: Added `anchor_frame_index`, `batch_end_frame`, `latent_frame_stride` parameters. Improved frame selection logic.
+- v2.2: Updated for WanVideo frame groups (4-frame blocks). Clarified `batch_start_frame` and `batch_end_frame` as frame group indices.
+- v2.1: Added `anchor_frame_index`, `batch_end_frame`, `latent_frame_stride` parameters
 - v2.0: WanVideo 5D format support, SVI compatibility, anchor/batch separation
 - v1.5: `.latent` file support, sequential numbering detection
 - v1.0: Initial release with basic image loading
