@@ -23,17 +23,17 @@ class K3NKImageGrab:
                 "directory_path": ("STRING", {"default": "", "placeholder": "Directory path"}),
                 "num_images": ("INT", {"default": 2, "min": 1, "max": 10000}),
                 "frame_stride": ("INT", {"default": 5, "min": 0, "max": 10000,
-                                         "tooltip": "Number of frames to skip between selected frames (applies to images AND latent frames)"}),
+                                         "tooltip": "Number of frames to skip between selected files (applies to images AND latent files)"}),
                 "reverse_order": ("BOOLEAN", {"default": False, 
-                                              "tooltip": "Reverse the order of selected images in output"}),
+                                              "tooltip": "Reverse the order of selected files in output"}),
                 "reverse_logic": ("BOOLEAN", {"default": False, 
                                               "tooltip": "Reverse selection logic: start from oldest instead of newest"}),
                 "max_batch_frames": ("INT", {"default": 0, "min": 0, "max": 1000,
-                                            "tooltip": "Max frames to output in latent_batch (0 = all frames)"}),
+                                            "tooltip": "Max frames to output in latent_batch (0 = all frames)\nNote: In WanVideo, frames are grouped in 4s (frame groups)"}),
                 "batch_start_frame": ("INT", {"default": 0, "min": 0, "max": 1000,
-                                             "tooltip": "Starting frame index (0=first frame, 1=second frame, etc.)"}),
+                                             "tooltip": "Starting FRAME GROUP index (0=first group, 1=second group, etc.)\nEach group contains 4 frames in WanVideo"}),
                 "batch_end_frame": ("INT", {"default": 0, "min": 0, "max": 1000,
-                                           "tooltip": "Frames to remove from END (0=keep all, 1=remove last frame, 2=remove last 2 frames, etc.)"}),
+                                           "tooltip": "FRAME GROUPS to remove from END (0=keep all, 1=remove last group, etc.)\nEach group contains 4 frames in WanVideo"}),
                 "anchor_from_start": ("BOOLEAN", {"default": False,
                                                  "tooltip": "True: first frame of lowest-number file\nFalse: last frame of highest-number file"}),
                 "anchor_frame_index": ("INT", {"default": 0, "min": 0, "max": 10000,
@@ -359,16 +359,18 @@ class K3NKImageGrab:
         
         # ===== APPLY FRAME SELECTION =====
         print(f"\n✂️ APPLYING FRAME SELECTION:")
-        print(f"  batch_start_frame: {batch_start_frame} (starting frame index)")
-        print(f"  batch_end_frame: {batch_end_frame} (frames to remove from END)")
+        print(f"  batch_start_frame: {batch_start_frame} (starting FRAME GROUP index)")
+        print(f"  batch_end_frame: {batch_end_frame} (FRAME GROUPS to remove from END)")
         print(f"  max_batch_frames: {max_batch_frames} (0 = ignored)")
         
-        start_frame = min(batch_start_frame, total_frames - 1) if total_frames > 0 else 0
+        # WanVideo usa grupos de 4 frames, así que convertimos índices de grupos a frames
+        start_frame_group = batch_start_frame
+        start_frame = start_frame_group * 4 if total_frames > 4 else start_frame_group
         
         if batch_end_frame > 0:
-            frames_to_remove = min(batch_end_frame, total_frames)
+            frames_to_remove = min(batch_end_frame * 4, total_frames) if total_frames > 4 else batch_end_frame
             end_frame = total_frames - frames_to_remove
-            print(f"  Removing {frames_to_remove} frames from END")
+            print(f"  Removing {frames_to_remove} frames from END ({batch_end_frame} frame groups)")
         else:
             end_frame = total_frames
             print(f"  Keeping all frames until the end")
@@ -380,6 +382,7 @@ class K3NKImageGrab:
         frames_to_take = end_frame - start_frame
         
         print(f"  Final selection: frames {start_frame}:{end_frame} ({frames_to_take} frames)")
+        print(f"  Note: In WanVideo, {frames_to_take//4 if frames_to_take >=4 else 1} frame group(s)")
         
         if frames_to_take > 0:
             selected_batch = wanvideo_batch[:, :, start_frame:end_frame, :, :]
@@ -391,6 +394,7 @@ class K3NKImageGrab:
                 selected_batch = wanvideo_batch[:, :, -1:, :, :]
         
         print(f"  Selected batch shape: {selected_batch.shape}")
+        print(f"  WanVideo frame groups: {selected_batch.shape[2]//4 if selected_batch.shape[2] >=4 else 1}")
         
         latent_batch_output = {"samples": selected_batch}
         
@@ -402,6 +406,7 @@ class K3NKImageGrab:
         print(f"\n✅ FINAL:")
         print(f"  anchor_frame: {anchor_frame_output['samples'].shape}")
         print(f"  latent_batch: {latent_batch_output['samples'].shape} ({selected_batch.shape[2]} frames)")
+        print(f"  WanVideo frame groups: {selected_batch.shape[2]//4 if selected_batch.shape[2] >=4 else 1}")
         print(f"  image: {image_batch.shape}")
         print(f"  Applied frame_stride to latents: {latent_frame_stride}")
         
@@ -410,11 +415,12 @@ class K3NKImageGrab:
 
 NODE_CLASS_MAPPINGS = {"K3NKImageGrab": K3NKImageGrab}
 NODE_DISPLAY_NAME_MAPPINGS = {"K3NKImageGrab": "K3NK Image Grab"}
-print("✅ K3NK Image Grab (with anchor_frame_index): Loaded")
+print("✅ K3NK Image Grab (WanVideo frame groups): Loaded")
 print("   - anchor_frame_index: selects a specific frame from the anchor file")
-print("     If anchor_from_start=True: 0=first frame, 1=second frame, etc.")
-print("     If anchor_from_start=False: 0=last frame, 1=second-to-last frame, etc.")
-print("   - batch_start_frame: index of the first frame to take (0=first frame, 1=second, etc.)")
-print("   - batch_end_frame: frames to remove from the END (0=none, 1=remove last, 2=remove last 2, etc.)")
-print("   - max_batch_frames: maximum number of frames (0=ignored, has priority over batch_end_frame)")
-print("   - frame_stride: also applies to frames inside .latent files")
+print("   - batch_start_frame: starting FRAME GROUP index (0=first group, 1=second group, etc.)")
+print("   - batch_end_frame: FRAME GROUPS to remove from END (0=none, 1=remove last group, etc.)")
+print("   - max_batch_frames: maximum number of frames (0=ignored)")
+print("   - WanVideo uses groups of 4 frames - parameters work with frame groups")
+print("   - Example: batch_start_frame=1 skips the first 4 frames")
+print("   - Example: batch_end_frame=1 removes the last 4 frames")
+print("   - frame_stride: applies to frames inside .latent files when latent_frame_stride=True")
