@@ -12,19 +12,25 @@ This node is specifically designed for video continuation workflows with **WanVi
 - **Independent anchor control**: Anchor frame selection independent of batch processing
 - **Frame limiting**: Select specific frame ranges from loaded batches
 - **Sequential numbering**: Detects file order by numeric sequence in filenames
+- **Improved anchor selection**: New `anchor_frame_index` parameter for precise frame choice within anchor file
+- **Enhanced frame trimming**: Added `batch_end_frame` parameter to remove frames from the end of the batch
+- **Latent stride control**: `latent_frame_stride` toggles whether `frame_stride` applies to frames inside `.latent` files
 
 ## Inputs
 | Name | Type | Description |
 |------|------|-------------|
 | `directory_path` | STRING | Path to folder containing frames/latent files |
-| `num_images` | INT | Number of files to process (1-100) |
-| `frame_stride` | INT | Number of files to skip between selections (0-1000) |
+| `num_images` | INT | Number of files to process (1-10000) |
+| `frame_stride` | INT | Number of files to skip between selections (0-10000). Applies to images AND latent frames if `latent_frame_stride=True` |
 | `reverse_order` | BOOLEAN | Reverse the order of selected files in output |
 | `reverse_logic` | BOOLEAN | Start selection from oldest (lowest number) instead of newest |
-| `max_batch_frames` | INT | Maximum frames in latent_batch (0=all frames) |
-| `batch_start_frame` | INT | Starting frame index for latent_batch output |
-| `anchor_from_start` | BOOLEAN | True: first frame of oldest file, False: last frame of newest file |
-| `file_extensions` | STRING | File extensions to load (default: jpg,jpeg,png,bmp,tiff,webp,latent) |
+| `max_batch_frames` | INT | Maximum frames in latent_batch (0=all frames, has priority over `batch_end_frame`) |
+| `batch_start_frame` | INT | Starting frame index for latent_batch output (0=first frame, 1=second frame, etc.) |
+| `batch_end_frame` | INT | Frames to remove from END of batch (0=keep all, 1=remove last frame, 2=remove last 2 frames, etc.) |
+| `anchor_from_start` | BOOLEAN | True: first frame of lowest-number file, False: last frame of highest-number file |
+| `anchor_frame_index` | INT | Frame index to use as anchor (0=first/last depending on `anchor_from_start`, 1=second/second-to-last, etc.) |
+| `latent_frame_stride` | BOOLEAN | Apply `frame_stride` to latent files (skip frames inside `.latent` files) |
+| `file_extensions` | STRING (optional) | File extensions to load (default: jpg,jpeg,png,bmp,tiff,webp,latent) |
 | `vae` | VAE (optional) | VAE for encoding images to latents |
 
 ## Outputs
@@ -46,18 +52,25 @@ Saved .latent files → K3NK Image Grab → WanVideo SVI nodes → Continue gene
 - Provides proper `anchor_frame` and `prev_samples` for SVI
 
 ### Anchor Frame Strategies
-- `anchor_from_start=True`: First frame of oldest (lowest number) file
-- `anchor_from_start=False`: Last frame of newest (highest number) file
-- Independent of `reverse_logic` and `reverse_order` settings
+- `anchor_from_start=True`: Select from lowest-number .latent file
+  - `anchor_frame_index=0`: First frame of file
+  - `anchor_frame_index=1`: Second frame of file
+  - `anchor_frame_index=N`: (N+1)th frame of file
+- `anchor_from_start=False`: Select from highest-number .latent file
+  - `anchor_frame_index=0`: Last frame of file
+  - `anchor_frame_index=1`: Second-to-last frame of file
+  - `anchor_frame_index=N`: (N+1)th frame from the end
 
 ### Frame Selection Examples
 | Goal | Settings |
 |------|----------|
 | Last 4 frames | `max_batch_frames=4`, `batch_start_frame=0` |
 | Frames 10-15 | `batch_start_frame=10`, `max_batch_frames=5` |
-| All frames | `max_batch_frames=0` (default) |
+| All frames except last 2 | `batch_start_frame=0`, `batch_end_frame=2` |
+| Frames 5-20 (max 10) | `batch_start_frame=5`, `max_batch_frames=10` |
 | Skip every other file | `frame_stride=1` |
 | Start from oldest | `reverse_logic=True` |
+| Skip frames inside .latent files | `frame_stride=1`, `latent_frame_stride=True` |
 
 ### File Naming Convention
 The node detects numeric sequences in filenames:
@@ -68,36 +81,49 @@ Oldest = lowest number, Newest = highest number
 
 ## Example Workflows
 
-### 1. Continue from Last Frame
+### 1. Continue from Specific Frame in Latest File
 Settings:
 - anchor_from_start: False
+- anchor_frame_index: 2 (third-to-last frame)
 - reverse_logic: False (start from newest)
-- num_images: 2 (load 2 most recent files)
-- max_batch_frames: 4 (last 4 frames total)
+- num_images: 2
+- max_batch_frames: 4
 Result:
-- anchor_frame: Last frame of newest .latent file
+- anchor_frame: Third-to-last frame of newest .latent file
 - latent_batch: Last 4 frames from 2 newest files
 
-### 2. Start New Sequence from Beginning
+### 2. Start New Sequence from Middle of First File
 Settings:
 - anchor_from_start: True
+- anchor_frame_index: 10 (11th frame)
 - reverse_logic: True (start from oldest)
-- num_images: 1 (just the first file)
+- num_images: 1
 - max_batch_frames: 0 (all frames)
 Result:
-- anchor_frame: First frame of oldest .latent file
+- anchor_frame: 11th frame of oldest .latent file
 - latent_batch: All frames from first file
 
-### 3. Middle Section of Sequence
+### 3. Trimmed Middle Section with End Removal
 Settings:
 - anchor_from_start: False
+- anchor_frame_index: 0 (last frame)
 - reverse_logic: False
 - num_images: 3
 - batch_start_frame: 10
+- batch_end_frame: 5
 - max_batch_frames: 15
 Result:
 - anchor_frame: Last frame of newest file
-- latent_batch: Frames 10-24 from 3 newest files
+- latent_batch: Frames 10-? from 3 newest files, removing last 5 frames, up to max 15 frames total
+
+### 4. Stride Inside Latent Files
+Settings:
+- frame_stride: 1
+- latent_frame_stride: True
+- num_images: 2
+Result:
+- Skips every other frame BOTH between files AND inside .latent files
+- Useful for downsampling temporal resolution
 
 ## Technical Details
 
@@ -113,10 +139,15 @@ Result:
 - Compatible with WanVideoWrapper SVI `anchor_frame` and `prev_samples` inputs
 
 ### Processing Order
-1. Anchor frame: Selected independently based on `anchor_from_start`
+1. Anchor frame: Selected independently based on `anchor_from_start` and `anchor_frame_index`
 2. File selection: Based on `num_images`, `frame_stride`, `reverse_logic`
 3. Frame concatenation: Temporal frames concatenated with newest files first
-4. Frame selection: Applied via `batch_start_frame` and `max_batch_frames`
+4. Frame selection: Applied via `batch_start_frame`, `max_batch_frames`, and `batch_end_frame`
+
+### Priority Rules
+1. `max_batch_frames > 0`: Limits total frames (has highest priority)
+2. `batch_start_frame`: Sets starting point
+3. `batch_end_frame`: Removes frames from end (applied after `max_batch_frames` if both set)
 
 ## Installation
 ### Method 1: ComfyUI Manager (Recommended)
@@ -139,9 +170,14 @@ Restart ComfyUI after installation.
 
 ### For SVI Workflows
 - Use `.latent` files saved from WanVideoEncode for best compatibility
-- Set `anchor_from_start=False` to continue from where you left off
+- Set `anchor_from_start=False` and `anchor_frame_index=0` to continue from where you left off
 - Use `max_batch_frames=4-8` for optimal SVI performance
 - Ensure consistent dimensions across all loaded files
+
+### Anchor Frame Selection
+- `anchor_frame_index` allows precise control over which frame to use as anchor
+- When continuing generation, use the last frame of the previous sequence
+- When starting a new shot, choose a frame from the middle for better temporal coherence
 
 ### File Management
 - Use sequential numbering in filenames for proper ordering
@@ -153,6 +189,7 @@ Restart ComfyUI after installation.
 - Loading `.latent` files is faster than encoding images
 - Use `frame_stride` to skip processing unnecessary files
 - `max_batch_frames` limits memory usage in downstream nodes
+- `batch_end_frame` helps remove unwanted frames without re-saving
 
 ## Troubleshooting
 
@@ -162,14 +199,19 @@ Restart ComfyUI after installation.
 - Verify tensor shapes in console output
 
 ### Anchor frame not as expected
-- Check `anchor_from_start` setting
+- Check `anchor_from_start` and `anchor_frame_index` settings
 - Verify file numbering sequence
-- Check console for which file is being used
+- Check console for which file and frame index is being used
 
 ### No frames loaded
 - Verify `directory_path` is correct
 - Check `file_extensions` includes your file type
 - Ensure files have numeric sequences in names
+
+### Frame selection issues
+- Remember priority: `max_batch_frames` > `batch_start_frame` > `batch_end_frame`
+- `batch_end_frame` removes from END after other selections
+- Set `max_batch_frames=0` to disable frame limit
 
 ### VAE encoding issues
 - Connect a VAE node for image encoding
@@ -177,6 +219,7 @@ Restart ComfyUI after installation.
 - Check image dimensions are compatible with VAE
 
 ## Version History
+- v2.1: Added `anchor_frame_index`, `batch_end_frame`, `latent_frame_stride` parameters. Improved frame selection logic.
 - v2.0: WanVideo 5D format support, SVI compatibility, anchor/batch separation
 - v1.5: `.latent` file support, sequential numbering detection
 - v1.0: Initial release with basic image loading
