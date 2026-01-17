@@ -29,11 +29,11 @@ class K3NKImageGrab:
                 "reverse_logic": ("BOOLEAN", {"default": False, 
                                               "tooltip": "Reverse selection logic: start from oldest instead of newest"}),
                 "max_batch_frames": ("INT", {"default": 0, "min": 0, "max": 1000,
-                                            "tooltip": "Max frames to output in latent_batch (0 = all frames)\nNote: In WanVideo, frames are grouped in 4s (frame groups)"}),
+                                            "tooltip": "Max frames to output in latent_batch (0 = all frames)\nNote: WanVideoWrapper processes frames in groups of 4 (frame groups)"}),
                 "batch_start_frame": ("INT", {"default": 0, "min": 0, "max": 1000,
-                                             "tooltip": "Starting FRAME GROUP index (0=first group, 1=second group, etc.)\nEach group contains 4 frames in WanVideo"}),
+                                             "tooltip": "Starting FRAME GROUP index (0=first group, 1=second group, etc.)\nEach group contains 4 frames in WanVideoWrapper"}),
                 "batch_end_frame": ("INT", {"default": 0, "min": 0, "max": 1000,
-                                           "tooltip": "FRAME GROUPS to remove from END (0=keep all, 1=remove last group, etc.)\nEach group contains 4 frames in WanVideo"}),
+                                           "tooltip": "FRAME GROUPS to remove from END (0=keep all, 1=remove last group, etc.)\nEach group contains 4 frames in WanVideoWrapper"}),
                 "anchor_from_start": ("BOOLEAN", {"default": False,
                                                  "tooltip": "True: first frame of lowest-number file\nFalse: last frame of highest-number file"}),
                 "anchor_frame_index": ("INT", {"default": 0, "min": 0, "max": 10000,
@@ -123,12 +123,12 @@ class K3NKImageGrab:
             return torch.zeros([1, 16, 1, 64, 112])
     
     def prepare_for_wanvideo(self, latent_tensor, num_frames=1):
-        """Prepare tensor for WanVideo - ensure 5D [B, C, T, H, W]"""
+        """Prepare tensor for WanVideoWrapper - ensure 5D [B, C, T, H, W]"""
         print(f"Input tensor shape: {latent_tensor.shape}")
         
         if len(latent_tensor.shape) == 5:
             if latent_tensor.shape[1] == 16:
-                print(f"Already in WanVideo 5D format: {latent_tensor.shape}")
+                print(f"Already in WanVideoWrapper 5D format: {latent_tensor.shape}")
                 return latent_tensor
             elif latent_tensor.shape[0] == 16:
                 latent_tensor = latent_tensor.unsqueeze(0)
@@ -363,7 +363,7 @@ class K3NKImageGrab:
         print(f"  batch_end_frame: {batch_end_frame} (FRAME GROUPS to remove from END)")
         print(f"  max_batch_frames: {max_batch_frames} (0 = ignored)")
         
-        # WanVideo usa grupos de 4 frames, así que convertimos índices de grupos a frames
+        # WanVideoWrapper uses groups of 4 frames, so we convert group indexes to frames.
         start_frame_group = batch_start_frame
         start_frame = start_frame_group * 4 if total_frames > 4 else start_frame_group
         
@@ -382,7 +382,7 @@ class K3NKImageGrab:
         frames_to_take = end_frame - start_frame
         
         print(f"  Final selection: frames {start_frame}:{end_frame} ({frames_to_take} frames)")
-        print(f"  Note: In WanVideo, {frames_to_take//4 if frames_to_take >=4 else 1} frame group(s)")
+        print(f"  Note: WanVideoWrapper uses 4-frame groups: {frames_to_take//4 if frames_to_take >=4 else 1} frame group(s)")
         
         if frames_to_take > 0:
             selected_batch = wanvideo_batch[:, :, start_frame:end_frame, :, :]
@@ -394,7 +394,7 @@ class K3NKImageGrab:
                 selected_batch = wanvideo_batch[:, :, -1:, :, :]
         
         print(f"  Selected batch shape: {selected_batch.shape}")
-        print(f"  WanVideo frame groups: {selected_batch.shape[2]//4 if selected_batch.shape[2] >=4 else 1}")
+        print(f"  WanVideoWrapper frame groups: {selected_batch.shape[2]//4 if selected_batch.shape[2] >=4 else 1}")
         
         latent_batch_output = {"samples": selected_batch}
         
@@ -406,7 +406,7 @@ class K3NKImageGrab:
         print(f"\n✅ FINAL:")
         print(f"  anchor_frame: {anchor_frame_output['samples'].shape}")
         print(f"  latent_batch: {latent_batch_output['samples'].shape} ({selected_batch.shape[2]} frames)")
-        print(f"  WanVideo frame groups: {selected_batch.shape[2]//4 if selected_batch.shape[2] >=4 else 1}")
+        print(f"  WanVideoWrapper frame groups: {selected_batch.shape[2]//4 if selected_batch.shape[2] >=4 else 1}")
         print(f"  image: {image_batch.shape}")
         print(f"  Applied frame_stride to latents: {latent_frame_stride}")
         
@@ -415,12 +415,12 @@ class K3NKImageGrab:
 
 NODE_CLASS_MAPPINGS = {"K3NKImageGrab": K3NKImageGrab}
 NODE_DISPLAY_NAME_MAPPINGS = {"K3NKImageGrab": "K3NK Image Grab"}
-print("✅ K3NK Image Grab (WanVideo frame groups): Loaded")
+print("✅ K3NK Image Grab (WanVideoWrapper frame groups): Loaded")
 print("   - anchor_frame_index: selects a specific frame from the anchor file")
 print("   - batch_start_frame: starting FRAME GROUP index (0=first group, 1=second group, etc.)")
 print("   - batch_end_frame: FRAME GROUPS to remove from END (0=none, 1=remove last group, etc.)")
 print("   - max_batch_frames: maximum number of frames (0=ignored)")
-print("   - WanVideo uses groups of 4 frames - parameters work with frame groups")
+print("   - WanVideoWrapper uses groups of 4 frames - parameters work with frame groups")
 print("   - Example: batch_start_frame=1 skips the first 4 frames")
 print("   - Example: batch_end_frame=1 removes the last 4 frames")
 print("   - frame_stride: applies to frames inside .latent files when latent_frame_stride=True")
