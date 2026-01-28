@@ -33,8 +33,9 @@ class K3NKImageLoaderWithBlending:
             return int(numbers[-1])
         return 0
     
-    def linear_blend(self, frame1, frame2, alpha):
-        return frame1 * (1.0 - alpha) + frame2 * alpha
+    def smootherstep_blend(self, frame1, frame2, alpha):
+        smooth_alpha = alpha * alpha * alpha * (alpha * (alpha * 6.0 - 15.0) + 10.0)
+        return frame1 * (1.0 - smooth_alpha) + frame2 * smooth_alpha
     
     def load_and_blend_images(self, directory_path, sequence_frames=81, 
                               overlap_frames=4, file_pattern="*.png"):
