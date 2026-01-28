@@ -13,7 +13,7 @@ class K3NKImageLoaderWithBlending:
             "required": {
                 "directory_path": ("STRING", {"default": "", "placeholder": "Directory path"}),
                 "sequence_frames": ("INT", {"default": 81, "min": 1, "max": 10000}),
-                "overlap_frames": ("INT", {"default": 4, "min": 1, "max": 20}),
+                "overlap_frames": ("INT", {"default": 5, "min": 1, "max": 20}),
                 "file_pattern": ("STRING", {"default": "*.png"}),
             }
         }
