@@ -113,7 +113,7 @@ class K3NKImageLoaderWithBlending:
                 prev_frame = result_tensors[prev_end_start + i]
                 new_frame = all_tensors[start_idx + i]
                 alpha = (i + 1) / (overlap_frames + 1)
-                result_tensors[prev_end_start + i] = self.linear_blend(prev_frame, new_frame, alpha)
+                result_tensors[prev_end_start + i] = self.smootherstep_blend(prev_frame, new_frame, alpha)
             
             # Añadir resto de frames de la secuencia
             for i in range(overlap_frames, sequence_frames):
@@ -139,7 +139,7 @@ class K3NKImageLoaderWithBlending:
                 prev_frame = result_tensors[prev_end_start + i]
                 new_frame = all_tensors[start_idx + i]
                 alpha = (i + 1) / (actual_overlap + 1)
-                result_tensors[prev_end_start + i] = self.linear_blend(prev_frame, new_frame, alpha)
+                result_tensors[prev_end_start + i] = self.smootherstep_blend(prev_frame, new_frame, alpha)
                 print(f"      Frame {prev_end_start+i}: blended with frame {start_idx+i} (alpha={alpha:.2f})")
             
             # Añadir el RESTO de los frames sobrantes (sin los que ya blendearon)
