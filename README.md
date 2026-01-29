@@ -1,11 +1,12 @@
 # K3NK Image Loader with Blending
 Advanced ComfyUI node for loading image sequences with intelligent frame blending for seamless video transitions.
 
-This node is specifically designed for **multi-sequence video workflows**, automatically blending overlapping frames between sequences to create smooth transitions without visible cuts.
+This node is specifically designed for **multi-sequence video workflows**, automatically blending overlapping frames between sequences to create smooth transitions without visible cuts. Uses **smootherstep interpolation** for professional-grade blending quality.
 
 ## Features
 - **Intelligent sequence detection**: Automatically calculates complete sequences and remaining frames
-- **Adaptive frame blending**: Seamlessly blends overlapping frames between sequences using linear interpolation
+- **Smootherstep blending**: Professional non-linear interpolation eliminates ghosting artifacts
+- **Interpolation-aware**: Automatically scales overlap for frame-interpolated sequences (RIFE, etc.)
 - **Incomplete sequence handling**: Properly processes remaining frames even when they don't form a complete sequence
 - **Flexible file patterns**: Support for multiple image formats via glob patterns
 - **Sequential numbering**: Detects and sorts files by numeric sequence in filenames
@@ -17,17 +18,24 @@ This node is specifically designed for **multi-sequence video workflows**, autom
 ### Sequence-Based Processing
 The node divides your image directory into sequences of N frames (e.g., 81 frames per sequence). When you have multiple sequences, it automatically blends the overlapping frames at sequence boundaries to create smooth transitions.
 
+### Smootherstep Blending Algorithm
+Unlike basic linear blending, this node uses **smootherstep** (quintic hermite interpolation):
+- **S-curve transition**: Slow at start/end, fast in middle
+- **Eliminates ghosting**: Especially crucial with RIFE ensemble interpolation
+- **Professional quality**: Industry-standard method for video crossfades
+- **Handles micro-variations**: Compensates for interpolation artifacts
+
 ### Frame Blending Mechanism
 - **Overlap frames**: The last N frames of one sequence blend with the first N frames of the next
-- **Linear interpolation**: Uses progressive alpha blending (e.g., 20%, 40%, 60%, 80% across 4 frames)
+- **Smootherstep interpolation**: Uses quintic curve for natural transitions
 - **Frame replacement**: Blended frames replace the original overlapping frames (no duplication)
 - **Incomplete sequences**: Automatically handles leftover frames with adaptive blending
 
 ### Output Frame Count
 **Important**: The output will have FEWER frames than input due to blending:
 - Input: 162 frames (2 sequences of 81)
-- Overlap: 4 frames
-- Output: 162 - 4 = **158 frames** (blending replaces, doesn't add)
+- Overlap: 5 frames
+- Output: 162 - 5 = **157 frames** (blending replaces, doesn't add)
 - Formula: `total_frames - (overlap_frames × number_of_transitions)`
 
 ## Inputs
@@ -35,7 +43,7 @@ The node divides your image directory into sequences of N frames (e.g., 81 frame
 |------|------|-------------|
 | `directory_path` | STRING | Path to folder containing image sequence |
 | `sequence_frames` | INT | Number of frames per sequence (1-10000, default: 81) |
-| `overlap_frames` | INT | Number of frames to blend at sequence boundaries (1-20, default: 4) |
+| `overlap_frames` | INT | Number of frames to blend at sequence boundaries (1-20, default: 5) |
 | `file_pattern` | STRING | Glob pattern for image files (default: *.png) |
 
 ## Outputs
@@ -45,60 +53,77 @@ The node divides your image directory into sequences of N frames (e.g., 81 frame
 
 ## Usage Examples
 
-### Example 1: Standard Two-Sequence Workflow
+### Example 1: Standard Two-Sequence Workflow (No Interpolation)
 **Scenario**: 162 frames total (2 sequences of 81 frames each)
 
 Settings:
 ```
 sequence_frames: 81
-overlap_frames: 4
+overlap_frames: 5
 ```
 
 Processing:
 - Sequence 1: Frames 0-80 (added complete)
 - Sequence 2: Frames 81-161
-  - Blend: Last 4 frames of Seq1 (76-79) with first 4 of Seq2 (81-84)
-  - Add: Remaining frames 85-161
-- **Output**: 158 frames total (162 - 4 blended frames)
+  - Blend: Last 5 frames of Seq1 (76-80) with first 5 of Seq2 (81-85)
+  - Add: Remaining frames 86-161
+- **Output**: 157 frames total (162 - 5 blended frames)
 
-### Example 2: Incomplete Final Sequence
+### Example 2: Two-Sequence Workflow with 2× Interpolation (RIFE)
+**Scenario**: 324 frames total (2 sequences × 162 interpolated frames)
+
+Settings:
+```
+sequence_frames: 162  # 81 × 2 (interpolated)
+overlap_frames: 10    # 5 × 2 (scaled for interpolation)
+```
+
+Processing:
+- Uses smootherstep to handle RIFE ensemble micro-variations
+- Eliminates ghosting artifacts from interpolation
+- Blend: Last 10 frames of Seq1 (152-161) with first 10 of Seq2 (162-171)
+- **Output**: 314 frames total (324 - 10 blended frames)
+
+**Critical**: When using RIFE with `ensemble=true`, the 10-frame overlap with smootherstep is essential to prevent visible ghosting.
+
+### Example 3: Incomplete Final Sequence
 **Scenario**: 161 frames total (81 + 80 frames)
 
 Settings:
 ```
 sequence_frames: 81
-overlap_frames: 4
+overlap_frames: 5
 ```
 
 Processing:
 - Sequence 1: Frames 0-80 (complete)
 - Remaining: 80 frames (not a complete sequence)
-  - Adaptive blend: Uses min(4, 80) = 4 frames for blending
-  - Blend: Frames 76-79 with frames 81-84
-  - Add: Remaining frames 85-160
-- **Output**: 157 frames total
+  - Adaptive blend: Uses min(5, 80) = 5 frames for blending
+  - Blend: Frames 76-80 with frames 81-85
+  - Add: Remaining frames 86-160
+- **Output**: 156 frames total
 
-### Example 3: Three Sequences with Interpolation
+### Example 4: Three Sequences with Interpolation
 **Scenario**: 486 frames (3 sequences × 162 interpolated frames)
 
 Settings:
 ```
 sequence_frames: 162  # 81 × 2 (interpolated)
-overlap_frames: 8     # 4 × 2 (scaled for interpolation)
+overlap_frames: 10    # 5 × 2 (scaled for interpolation)
 ```
 
 Processing:
 - Creates 2 blend transitions (between 3 sequences)
-- Total blended frames: 8 × 2 = 16 frames
-- **Output**: 486 - 16 = **470 frames**
+- Total blended frames: 10 × 2 = 20 frames
+- **Output**: 486 - 20 = **466 frames**
 
-### Example 4: Single Sequence (No Blending)
+### Example 5: Single Sequence (No Blending)
 **Scenario**: 81 frames total
 
 Settings:
 ```
 sequence_frames: 81
-overlap_frames: 4
+overlap_frames: 5
 ```
 
 Processing:
@@ -108,14 +133,20 @@ Processing:
 
 ## Interpolation Guidelines
 
-When working with interpolated sequences, scale both parameters proportionally:
+When working with interpolated sequences (RIFE, FILM, etc.), **always scale the overlap proportionally**:
 
 | Original | 2× Interpolation | 4× Interpolation |
 |----------|------------------|------------------|
-| 81 frames, 4 blend | 162 frames, 8 blend | 324 frames, 16 blend |
-| 121 frames, 6 blend | 242 frames, 12 blend | 484 frames, 24 blend |
+| 81 frames, 5 blend | 162 frames, 10 blend | 324 frames, 20 blend |
+| 121 frames, 5 blend | 242 frames, 10 blend | 484 frames, 20 blend |
 
-**Formula**: `interpolated_value = original_value × interpolation_factor`
+**Formula**: `interpolated_overlap = original_overlap × interpolation_factor`
+
+**Why This Matters:**
+- Video generation models often duplicate the last 5 frames to prevent color shift
+- With 2× interpolation, these become 10 duplicated frames
+- Overlap must cover ALL duplicated frames for smooth transitions
+- Smootherstep handles micro-variations from RIFE ensemble mode
 
 ## File Naming Convention
 
@@ -138,15 +169,22 @@ The node automatically converts all images to RGB and normalizes to float32 [0-1
 
 ## Technical Details
 
-### Blending Algorithm
+### Smootherstep Blending Algorithm
 ```python
-blended_frame = frame1 × (1.0 - alpha) + frame2 × alpha
+smooth_alpha = alpha³ × (alpha × (alpha × 6 - 15) + 10)
+blended_frame = frame1 × (1 - smooth_alpha) + frame2 × smooth_alpha
 ```
-Where `alpha` progressively increases across overlap frames:
-- Frame 1: alpha = 1/5 = 0.20 (20% new, 80% old)
-- Frame 2: alpha = 2/5 = 0.40 (40% new, 60% old)
-- Frame 3: alpha = 3/5 = 0.60 (60% new, 40% old)
-- Frame 4: alpha = 4/5 = 0.80 (80% new, 20% old)
+
+**Alpha progression** across 5 overlap frames:
+- Frame 1: alpha = 1/6 = 0.167 → smooth = 0.009 (0.9% new, 99.1% old)
+- Frame 2: alpha = 2/6 = 0.333 → smooth = 0.132 (13.2% new, 86.8% old)
+- Frame 3: alpha = 3/6 = 0.500 → smooth = 0.500 (50% new, 50% old)
+- Frame 4: alpha = 4/6 = 0.667 → smooth = 0.868 (86.8% new, 13.2% old)
+- Frame 5: alpha = 5/6 = 0.833 → smooth = 0.991 (99.1% new, 0.9% old)
+
+**Comparison with Linear**:
+- **Linear**: Constant blend rate → visible ghosting with many frames
+- **Smootherstep**: S-curve → imperceptible transitions, eliminates ghosting
 
 ### Processing Order
 1. **File discovery**: Glob pattern matching in directory
@@ -154,7 +192,7 @@ Where `alpha` progressively increases across overlap frames:
 3. **Image loading**: Load all images, convert to RGB tensors
 4. **Sequence calculation**: Determine complete sequences and remainders
 5. **First sequence**: Add all frames without modification
-6. **Subsequent sequences**: Blend overlap, add remaining frames
+6. **Subsequent sequences**: Smootherstep blend overlap, add remaining frames
 7. **Incomplete sequences**: Adaptive blending with available frames
 8. **Output stacking**: Concatenate all frames into single tensor
 
@@ -166,25 +204,25 @@ Where `alpha` progressively increases across overlap frames:
 
 ## Console Output Example
 ```
-📁 Found 162 images
-✅ Loaded 162 images
-🎯 81 frames per sequence, 4 overlap frames
+📁 Found 324 images
+✅ Loaded 324 images
+🎯 162 frames per sequence, 10 overlap frames
 
 🔧 Processing sequences...
   Complete sequences: 2
   Remaining frames: 0
 
-  Added first sequence: frames 0-80
+  Added first sequence: frames 0-161
 
   Sequence 2:
-    Start index: 81
-    Blending frames 77-80 with 81-84
-    Added frames 85-161
+    Start index: 162
+    Blending frames 152-161 with 162-171
+    Added frames 172-323
 
-📊 Final: 158 frames (original: 162)
+📊 Final: 314 frames (original: 324)
 
 🔍 Checking for actual blending...
-   4/10 first frames were modified
+   10/10 first frames were modified
 ```
 
 ## Best Practices
@@ -195,24 +233,43 @@ Where `alpha` progressively increases across overlap frames:
 - For 3 sequences: expect to lose `overlap_frames × 2` frames total
 
 ### Overlap Selection
-- **Small overlaps (2-4 frames)**: Faster transitions, more abrupt
-- **Medium overlaps (4-8 frames)**: Balanced, recommended for most cases
-- **Large overlaps (8-16 frames)**: Very smooth, slower transitions
-- Scale overlap proportionally with interpolation factor
+- **Without interpolation**: 5 frames (default, handles 5 duplicated frames)
+- **With 2× interpolation**: 10 frames (handles 10 duplicated frames)
+- **With 4× interpolation**: 20 frames (handles 20 duplicated frames)
+- **General rule**: Scale overlap with interpolation factor
+
+### Interpolation-Specific Tips
+- **RIFE with ensemble=true**: ALWAYS use smootherstep (this node's default)
+- **Duplicated frames**: Video models duplicate last 5 frames to prevent color shift
+- **After interpolation**: These duplicates become 10, 20, etc. frames
+- **Overlap must cover duplicates**: Otherwise you'll see hard cuts
 
 ### Quality Tips
 - Use consistent lighting across sequences for better blending
 - Avoid drastic scene changes at sequence boundaries
-- Higher overlap values create smoother transitions but reduce output length
+- Smootherstep compensates for RIFE ensemble micro-variations
+- Higher overlap values needed for interpolated content
 - Test with a small sequence first to verify settings
 
 ### Workflow Integration
-- Use with VHS Video Combine for final video output
-- Pair with frame interpolation nodes for smooth slow-motion
+- Use with RIFE/FILM interpolation nodes for smooth slow-motion
+- Pair with VHS Video Combine for final video output
 - Compatible with any ComfyUI node accepting IMAGE input
 - Works seamlessly with AnimateDiff, Wan Video, and other video models
+- Essential for multi-batch WanVideoWrapper workflows
 
 ## Troubleshooting
+
+### Ghosting visible in transitions (interpolated sequences)
+- **Cause**: RIFE ensemble mode creates micro-variations between frames
+- **Solution**: Already solved with smootherstep - ensure you're using latest version
+- **Verify**: Check code uses `smooth_alpha = alpha * alpha * alpha * (alpha * (alpha * 6.0 - 15.0) + 10.0)`
+- **If persists**: Reduce overlap by 2-4 frames (e.g., 10 → 6-8)
+
+### Hard cuts visible between sequences
+- **Cause**: Overlap doesn't cover all duplicated frames
+- **Solution**: Increase overlap to match interpolation factor (5 → 10 for 2×)
+- **Verify**: Check that `overlap_frames = original_overlap × interpolation_factor`
 
 ### No blending visible in output
 - Check console for "X/10 first frames were modified"
@@ -223,7 +280,7 @@ Where `alpha` progressively increases across overlap frames:
 ### Unexpected output frame count
 - Remember: blending REPLACES frames, doesn't add them
 - Formula: `total_input - (overlap_frames × number_of_transitions)`
-- Example: 243 frames (3 sequences) with 4 overlap = 243 - 8 = 235 output
+- Example: 486 frames (3 sequences) with 10 overlap = 486 - 20 = 466 output
 
 ### "No files found" error
 - Verify `directory_path` is correct and absolute
@@ -246,10 +303,12 @@ Where `alpha` progressively increases across overlap frames:
 
 - **Loading speed**: ~0.1-0.5s per image depending on resolution and disk speed
 - **Blending speed**: Nearly instant (GPU tensor operations)
+- **Smootherstep overhead**: Negligible compared to linear
 - **Bottleneck**: Usually file I/O, not computation
 - **Optimization**: Use SSD storage for faster loading
 
 ## Version History
+- **v1.3**: Switched to smootherstep blending, updated defaults (5 overlap), added interpolation guidelines
 - **v1.2**: Improved incomplete sequence handling with adaptive blending
 - **v1.1**: Fixed edge cases with remaining frames, enhanced debug output
 - **v1.0**: Initial release with multi-sequence blending support
@@ -257,10 +316,11 @@ Where `alpha` progressively increases across overlap frames:
 ## Credits
 
 Built for ComfyUI video workflows. Designed to work seamlessly with:
-- WanVideoWrapper
+- WanVideoWrapper (multi-batch workflows)
+- RIFE interpolation (especially ensemble mode)
 - AnimateDiff
 - VHS Video Combine
-- Frame interpolation nodes
+- Frame interpolation nodes (FILM, RIFE, etc.)
 
 ## License
 
@@ -268,4 +328,4 @@ MIT License - Free to use and modify
 
 ---
 
-**Note**: This node is optimized for multi-sequence video generation workflows where smooth transitions between generated segments are critical. For single-sequence workflows or when transitions aren't needed, consider using standard image loader nodes.
+**Note**: This node is optimized for multi-sequence video generation workflows where smooth transitions between generated segments are critical. The smootherstep algorithm is specifically tuned to handle RIFE ensemble interpolation artifacts. For single-sequence workflows or when transitions aren't needed, consider using standard image loader nodes.
